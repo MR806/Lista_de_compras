@@ -10,15 +10,11 @@ import {
   CheckCircle2,
   Clock,
   Trash2,
-  Calendar,
-  Euro,
   ChevronLeft,
   Copy,
   ChevronRight,
   PackageOpen,
-  Tag,
   Info,
-  TrendingDown,
   Store as StoreIcon,
   Circle
 } from 'lucide-react';

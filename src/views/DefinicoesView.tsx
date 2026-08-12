@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Header } from '../components/Header';
-import { Database, RefreshCw, Smartphone, ShieldCheck, Store, Package, ShoppingBag, History, Tags } from 'lucide-react';
+import { Database, RefreshCw, Smartphone, Store, Package, ShoppingBag, History, Tags } from 'lucide-react';
 import { INITIAL_LOJAS, INITIAL_CATEGORIAS, INITIAL_PRODUTOS, INITIAL_HISTORICO_PRECOS, INITIAL_LISTAS, INITIAL_ITENS_LISTA } from '../db/seed';
 
 export function DefinicoesView() {

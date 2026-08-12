@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Header } from '../components/Header';
 import { BottomSheet } from '../components/BottomSheet';
-import { Store, MapPin, Search, Plus, Trash2, Tag } from 'lucide-react';
+import { Store, MapPin, Search, Trash2, Tag } from 'lucide-react';
 import { Loja } from '../types/database';
 
 export function LojasView() {
@@ -100,7 +100,7 @@ export function LojasView() {
               const countPrecos = historicoPrecos.filter((h) => h.loja_id === loja.id).length;
 
               return (
-                <div key={loja.id} className="ios-card" style={{ display: 'flex', alignItems: 'center', justifyBetween: 'space-between', gap: '14px' }}>
+                <div key={loja.id} className="ios-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px' }}>
                   {/* Ícone de cor da loja */}
                   <div style={{
                     width: '44px',
