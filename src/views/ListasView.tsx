@@ -16,7 +16,8 @@ import {
   PackageOpen,
   Info,
   Store as StoreIcon,
-  Circle
+  Circle,
+  Plus
 } from 'lucide-react';
 import { ListaCompras, ItemLista, Produto, Categoria, Loja, HistoricoPreco } from '../types/database';
 
@@ -28,7 +29,7 @@ export function ListasView() {
   const [isCreateSheetOpen, setIsCreateSheetOpen] = useState(false);
   const [isCloneSheetOpen, setIsCloneSheetOpen] = useState(false);
 
-  // Modais da Etapa 4
+  // Modais da Etapa 4 e Adicionar Item
   const [isPurchaseSheetOpen, setIsPurchaseSheetOpen] = useState(false);
   const [purchaseItem, setPurchaseItem] = useState<ItemLista | null>(null);
   const [purchasePrice, setPurchasePrice] = useState<string>('');
@@ -36,6 +37,12 @@ export function ListasView() {
 
   const [isHistorySheetOpen, setIsHistorySheetOpen] = useState(false);
   const [historyProduto, setHistoryProduto] = useState<Produto | null>(null);
+
+  const [isAddItemSheetOpen, setIsAddItemSheetOpen] = useState(false);
+  const [addItemProdutoId, setAddItemProdutoId] = useState<string>('');
+  const [addItemQuantidade, setAddItemQuantidade] = useState<number>(1);
+  const [addItemLojaId, setAddItemLojaId] = useState<string>('');
+  const [addItemNotas, setAddItemNotas] = useState<string>('');
 
   // Formulário de nova lista
   const [nomeLista, setNomeLista] = useState('');
@@ -63,6 +70,13 @@ export function ListasView() {
       setPurchaseLojaId(lojas[0].id);
     }
   }, [lojas]);
+
+  // Set default product when add item modal opens
+  useEffect(() => {
+    if (produtos.length > 0 && !addItemProdutoId) {
+      setAddItemProdutoId(produtos[0].id);
+    }
+  }, [produtos, addItemProdutoId]);
 
   // Separar listas abertas e fechadas
   const listasAbertas = listas.filter((l) => l.estado === 'aberta');
@@ -166,21 +180,59 @@ export function ListasView() {
     await db.itens_lista.delete(itemId);
   };
 
+  // Lógica de adicionar item ao carrinho de compras da lista ativa
+  const handleAddItemToList = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeListId || !addItemProdutoId) return;
+
+    try {
+      // Verificar se o produto já existe na lista
+      const existente = itens.find(
+        (i) => i.lista_id === activeListId && i.produto_id === addItemProdutoId && i.estado === 'pendente'
+      );
+
+      if (existente) {
+        // Apenas atualizar quantidade
+        await db.itens_lista.update(existente.id, {
+          quantidade: existente.quantidade + Number(addItemQuantidade),
+          notas: addItemNotas.trim() || existente.notas
+        });
+      } else {
+        // Criar novo item
+        const novoItem: ItemLista = {
+          id: `itm-${Date.now()}`,
+          lista_id: activeListId,
+          produto_id: addItemProdutoId,
+          quantidade: Number(addItemQuantidade) || 1,
+          estado: 'pendente',
+          loja_preferencial_id: addItemLojaId || undefined,
+          notas: addItemNotas.trim() || undefined,
+          criado_em: new Date().toISOString()
+        };
+        await db.itens_lista.add(novoItem);
+      }
+
+      // Limpar form
+      setAddItemQuantidade(1);
+      setAddItemNotas('');
+      setIsAddItemSheetOpen(false);
+    } catch (err) {
+      console.error('Erro ao adicionar item à lista:', err);
+    }
+  };
+
   // Clique no círculo de check-off
   const handleCircleClick = (item: ItemLista, e: React.MouseEvent) => {
-    e.stopPropagation(); // Não acionar visualizador de histórico
+    e.stopPropagation();
 
     if (item.estado === 'comprado') {
-      // Se já estava comprado, reverte para pendente sem perguntar nada
       db.itens_lista.update(item.id, {
         estado: 'pendente',
         preco_unitario_pago: undefined
       });
     } else {
-      // Se for marcar como comprado, abre o Bottom Sheet de registo de preço
       setPurchaseItem(item);
       
-      // Tentar preencher com o melhor preço conhecido como sugestão
       const precosProd = historicoPrecos.filter((h) => h.produto_id === item.produto_id);
       if (precosProd.length > 0) {
         const melhorPreco = Math.min(...precosProd.map((h) => h.preco));
@@ -189,7 +241,6 @@ export function ListasView() {
         setPurchasePrice('');
       }
 
-      // Predefinir com a última loja usada ou a loja preferencial do item
       if (item.loja_preferencial_id) {
         setPurchaseLojaId(item.loja_preferencial_id);
       } else {
@@ -216,30 +267,26 @@ export function ListasView() {
     }
 
     try {
-      // 1. Atualizar o item da lista
       await db.itens_lista.update(purchaseItem.id, {
         estado: 'comprado',
         preco_unitario_pago: precoNum,
         loja_preferencial_id: purchaseLojaId
       });
 
-      // 2. Registar no histórico de preços
       const novoHistorico: HistoricoPreco = {
         id: `hist-${Date.now()}`,
         produto_id: purchaseItem.produto_id,
         loja_id: purchaseLojaId,
         preco: precoNum,
-        data: new Date().toISOString().split('T')[0], // YYYY-MM-DD
+        data: new Date().toISOString().split('T')[0],
         em_promocao: false,
         criado_em: new Date().toISOString()
       };
 
       await db.historico_precos.add(novoHistorico);
 
-      // Guardar a última loja usada
       localStorage.setItem('last_loja_id', purchaseLojaId);
 
-      // Atualizar stock em casa (incrementar stock_atual com base na quantidade comprada)
       const prod = produtoMap.get(purchaseItem.produto_id);
       if (prod) {
         await db.produtos.update(prod.id, {
@@ -247,7 +294,6 @@ export function ListasView() {
         });
       }
 
-      // Limpar estados
       setIsPurchaseSheetOpen(false);
       setPurchaseItem(null);
       setPurchasePrice('');
@@ -270,12 +316,11 @@ export function ListasView() {
     const lista = listas.find((l) => l.id === activeListId);
     const itensDaLista = itens.filter((i) => i.lista_id === activeListId);
 
-    // Requisito 1: Itens marcados como comprado descem para o fim da lista
     const sortedItens = [...itensDaLista].sort((a, b) => {
       if (a.estado === b.estado) {
         return new Date(a.criado_em || '').getTime() - new Date(b.criado_em || '').getTime();
       }
-      return a.estado === 'pendente' ? -1 : 1; // pendentes no topo, comprados no fim
+      return a.estado === 'pendente' ? -1 : 1;
     });
 
     const totalItens = itensDaLista.length;
@@ -289,18 +334,31 @@ export function ListasView() {
             type="button"
             onClick={() => setActiveListId(null)}
             className="ios-action-btn"
-            style={{ padding: '8px 12px', background: 'transparent' }}
+            style={{ padding: '8px 12px', background: 'transparent', flexShrink: 0 }}
           >
             <ChevronLeft size={22} style={{ marginLeft: '-4px' }} />
             <span>Listas</span>
           </button>
-          <h2 className="ios-sheet-title" style={{ flex: 1, textAlign: 'center', marginRight: '40px' }}>
+          <h2 className="ios-sheet-title" style={{ flex: 1, textAlign: 'center', fontSize: '17px', fontWeight: '600' }}>
             {lista?.nome_lista || 'Detalhes'}
           </h2>
+          <button
+            type="button"
+            onClick={() => {
+              if (produtos.length > 0 && !addItemProdutoId) {
+                setAddItemProdutoId(produtos[0].id);
+              }
+              setIsAddItemSheetOpen(true);
+            }}
+            className="ios-action-btn"
+            style={{ padding: '8px 12px', background: 'transparent', flexShrink: 0 }}
+            title="Adicionar Item"
+          >
+            <Plus size={22} />
+          </button>
         </header>
 
         <div className="view-container" style={{ animation: 'iosFadeIn 0.2s ease-out' }}>
-          {/* Resumo de Progresso e Orçamento */}
           <div className="ios-card" style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--ios-label-secondary)' }}>
               <span>Orçamento Estimado: {lista?.orcamento_estimado ? `${lista.orcamento_estimado.toFixed(2)}€` : 'N/A'}</span>
@@ -311,15 +369,43 @@ export function ListasView() {
             </div>
           </div>
 
-          <h3 style={{ fontSize: '13px', fontWeight: '500', color: 'var(--ios-label-secondary)', textTransform: 'uppercase', marginBottom: '8px', marginLeft: '4px' }}>
-            Itens de Compra
-          </h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', padding: '0 4px' }}>
+            <h3 style={{ fontSize: '13px', fontWeight: '500', color: 'var(--ios-label-secondary)', textTransform: 'uppercase' }}>
+              Itens nesta Lista ({itensDaLista.length})
+            </h3>
+            
+            <button
+              type="button"
+              onClick={() => setIsAddItemSheetOpen(true)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--ios-blue)',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              <Plus size={14} /> Adicionar
+            </button>
+          </div>
 
           {sortedItens.length === 0 ? (
             <div className="ios-card" style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--ios-label-secondary)' }}>
               <PackageOpen size={36} style={{ opacity: 0.4, marginBottom: '8px' }} />
               <p style={{ fontWeight: '500' }}>Nenhum item adicionado</p>
-              <p style={{ fontSize: '13px', marginTop: '4px' }}>Esta lista está vazia. Adicione produtos no catálogo.</p>
+              <p style={{ fontSize: '13px', marginTop: '4px' }}>Esta lista está vazia. Comece por adicionar produtos.</p>
+              <button
+                type="button"
+                onClick={() => setIsAddItemSheetOpen(true)}
+                className="ios-submit-btn"
+                style={{ marginTop: '16px', maxWidth: '200px', marginLeft: 'auto', marginRight: 'auto' }}
+              >
+                Adicionar Item
+              </button>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -346,7 +432,6 @@ export function ListasView() {
                         borderLeft: isComprado ? '4px solid var(--ios-green)' : '1px solid var(--ios-card-border)',
                       }}
                     >
-                      {/* Check-off Círculo à Esquerda */}
                       <button
                         type="button"
                         onClick={(e) => handleCircleClick(item, e)}
@@ -369,7 +454,6 @@ export function ListasView() {
                         )}
                       </button>
 
-                      {/* Nome do Produto (Dispara Histórico) */}
                       <div
                         style={{ flex: 1, cursor: 'pointer' }}
                         onClick={() => handleProductClick(item.produto_id)}
@@ -396,9 +480,13 @@ export function ListasView() {
                             </span>
                           )}
                         </div>
+                        {item.notas && (
+                          <div style={{ fontSize: '11px', color: 'var(--ios-orange)', fontStyle: 'italic', marginTop: '2px' }}>
+                            Nota: {item.notas}
+                          </div>
+                        )}
                       </div>
 
-                      {/* Info Icon para Histórico rápido */}
                       <button
                         type="button"
                         onClick={() => handleProductClick(item.produto_id)}
@@ -413,6 +501,87 @@ export function ListasView() {
             </div>
           )}
         </div>
+
+        {/* Bottom Sheet: Adicionar Item à Lista */}
+        <BottomSheet
+          isOpen={isAddItemSheetOpen}
+          onClose={() => setIsAddItemSheetOpen(false)}
+          title="Adicionar Item"
+        >
+          <form onSubmit={handleAddItemToList} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div className="ios-form-group">
+              <label className="ios-form-label">Selecionar Produto *</label>
+              {produtos.length === 0 ? (
+                <div style={{ fontSize: '14px', color: 'var(--ios-red)' }}>
+                  Não existem produtos registados no catálogo. Crie-os na tab "Produtos" primeiro!
+                </div>
+              ) : (
+                <select
+                  className="ios-select"
+                  value={addItemProdutoId}
+                  onChange={(e) => setAddItemProdutoId(e.target.value)}
+                  required
+                >
+                  {produtos.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="ios-form-group">
+                <label className="ios-form-label">Quantidade</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0.1"
+                  className="ios-input"
+                  value={addItemQuantidade}
+                  onChange={(e) => setAddItemQuantidade(Number(e.target.value))}
+                  required
+                />
+              </div>
+
+              <div className="ios-form-group">
+                <label className="ios-form-label">Supermercado Preferencial</label>
+                <select
+                  className="ios-select"
+                  value={addItemLojaId}
+                  onChange={(e) => setAddItemLojaId(e.target.value)}
+                >
+                  <option value="">Qualquer loja...</option>
+                  {lojas.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="ios-form-group">
+              <label className="ios-form-label">Notas Adicionais (Opcional)</label>
+              <input
+                type="text"
+                className="ios-input"
+                placeholder="Ex: Embalagem poupança, marca própria..."
+                value={addItemNotas}
+                onChange={(e) => setAddItemNotas(e.target.value)}
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="ios-submit-btn"
+              disabled={produtos.length === 0}
+            >
+              Adicionar à Lista
+            </button>
+          </form>
+        </BottomSheet>
 
         {/* Bottom Sheet rápido: Registo de Preço e Loja da Compra */}
         <BottomSheet
