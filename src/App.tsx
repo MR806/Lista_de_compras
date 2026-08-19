@@ -9,6 +9,9 @@ import { DefinicoesView } from './views/DefinicoesView';
 export function App() {
   const [activeTab, setActiveTab] = useState<TabId>('listas');
   const [isInitializing, setIsInitializing] = useState(true);
+  const [currency, setCurrency] = useState<string>(() => {
+    return localStorage.getItem('preferred_currency') || 'EUR';
+  });
 
   useEffect(() => {
     async function init() {
@@ -22,6 +25,12 @@ export function App() {
     }
     init();
   }, []);
+
+  // Sincronizar moeda com o localStorage quando for atualizada
+  const handleCurrencyChange = (newCurrency: string) => {
+    setCurrency(newCurrency);
+    localStorage.setItem('preferred_currency', newCurrency);
+  };
 
   if (isInitializing) {
     return (
@@ -43,10 +52,12 @@ export function App() {
   return (
     <div className="app-container">
       <main style={{ flex: 1 }}>
-        {activeTab === 'listas' && <ListasView />}
-        {activeTab === 'produtos' && <ProdutosView />}
+        {activeTab === 'listas' && <ListasView currency={currency} />}
+        {activeTab === 'produtos' && <ProdutosView currency={currency} />}
         {activeTab === 'lojas' && <LojasView />}
-        {activeTab === 'definicoes' && <DefinicoesView />}
+        {activeTab === 'definicoes' && (
+          <DefinicoesView currency={currency} onCurrencyChange={handleCurrencyChange} />
+        )}
       </main>
 
       {/* Tab Bar Inferior Translúcida iOS */}

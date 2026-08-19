@@ -6,6 +6,7 @@ import {
   HistoricoPreco,
   ListaCompras,
   ItemLista,
+  SugestaoHistorico,
   ComparativoPrecoProduto,
   ItemListaDetalhado,
   ListaComprasDetalhada,
@@ -17,6 +18,7 @@ import {
   INITIAL_HISTORICO_PRECOS,
   INITIAL_LISTAS,
   INITIAL_ITENS_LISTA,
+  INITIAL_SUGESTOES,
 } from './seed';
 
 export class AppDatabase extends Dexie {
@@ -26,18 +28,21 @@ export class AppDatabase extends Dexie {
   historico_precos!: Table<HistoricoPreco, string>;
   listas_compras!: Table<ListaCompras, string>;
   itens_lista!: Table<ItemLista, string>;
+  sugestoes_historico!: Table<SugestaoHistorico, string>;
 
   constructor() {
     super('ListaComprasDB');
 
     // Definição dos índices relacionais (id, chaves estrangeiras e campos de pesquisa)
-    this.version(1).stores({
+    // Atualizado para a versão 2 com a tabela sugestoes_historico e novos índices em itens_lista
+    this.version(2).stores({
       lojas: 'id, &nome',
       categorias: 'id, &nome',
       produtos: 'id, nome, categoria_id, stock_atual, stock_minimo',
       historico_precos: 'id, produto_id, loja_id, [produto_id+loja_id], data',
       listas_compras: 'id, nome_lista, data_criacao, estado',
-      itens_lista: 'id, lista_id, produto_id, loja_preferencial_id, estado',
+      itens_lista: 'id, lista_id, nome_produto, categoria, loja, estado',
+      sugestoes_historico: 'id, tipo, valor',
     });
   }
 }
@@ -51,15 +56,46 @@ export async function seedDatabaseIfEmpty(): Promise<void> {
   const countLojas = await db.lojas.count();
   if (countLojas === 0) {
     console.log('🌱 Inicializando a Base de Dados Relacional com Dados de Exemplo...');
-    await db.transaction('rw', [db.lojas, db.categorias, db.produtos, db.historico_precos, db.listas_compras, db.itens_lista], async () => {
+    await db.transaction('rw', [
+      db.lojas,
+      db.categorias,
+      db.produtos,
+      db.historico_precos,
+      db.listas_compras,
+      db.itens_lista,
+      db.sugestoes_historico
+    ], async () => {
       await db.lojas.bulkAdd(INITIAL_LOJAS);
       await db.categorias.bulkAdd(INITIAL_CATEGORIAS);
       await db.produtos.bulkAdd(INITIAL_PRODUTOS);
       await db.historico_precos.bulkAdd(INITIAL_HISTORICO_PRECOS);
       await db.listas_compras.bulkAdd(INITIAL_LISTAS);
       await db.itens_lista.bulkAdd(INITIAL_ITENS_LISTA);
+      await db.sugestoes_historico.bulkAdd(INITIAL_SUGESTOES);
     });
     console.log('✅ Base de dados inicializada com sucesso!');
+  }
+}
+
+/**
+ * Guarda um termo ou valor inserido pelo utilizador nas tabelas de histórico sugestões para autocomplete.
+ */
+export async function salvarNoHistorico(
+  tipo: 'produto' | 'categoria' | 'quantidade' | 'loja',
+  valor: string
+): Promise<void> {
+  const cleanValor = valor?.trim();
+  if (!cleanValor) return;
+  
+  const id = `${tipo}:${cleanValor.toLowerCase()}`;
+  try {
+    await db.sugestoes_historico.put({
+      id,
+      tipo,
+      valor: cleanValor
+    });
+  } catch (err) {
+    console.error('Erro ao guardar no histórico de sugestões:', err);
   }
 }
 
@@ -133,6 +169,7 @@ export async function getComparativoPrecosProduto(produtoId: string): Promise<Co
 
 /**
  * Obter uma lista de compras detalhada com relacionamentos (Produtos, Categorias, Lojas e Preços)
+ * Adaptada para resolver por correspondência de texto para manter compatibilidade com catalogação
  */
 export async function getListaComprasDetalhada(listaId: string): Promise<ListaComprasDetalhada | null> {
   const lista = await db.listas_compras.get(listaId);
@@ -144,27 +181,38 @@ export async function getListaComprasDetalhada(listaId: string): Promise<ListaCo
   const lojas = await db.lojas.toArray();
   const historicoPrecos = await db.historico_precos.toArray();
 
-  const prodMap = new Map(produtos.map((p) => [p.id, p]));
-  const catMap = new Map(categorias.map((c) => [c.id, c]));
-  const lojaMap = new Map(lojas.map((l) => [l.id, l]));
+  // Indexar catálogos por nome para enriquecimento de DTO
+  const prodMapByNome = new Map(produtos.map((p) => [p.nome.toLowerCase(), p]));
+  const catMapByNome = new Map(categorias.map((c) => [c.nome.toLowerCase(), c]));
+  const lojaMapByNome = new Map(lojas.map((l) => [l.nome.toLowerCase(), l]));
 
   const itensDetalhados: ItemListaDetalhado[] = itensRaw.map((item) => {
-    const prod = prodMap.get(item.produto_id);
-    const cat = prod ? catMap.get(prod.categoria_id) : undefined;
-    const lojaPref = item.loja_preferencial_id ? lojaMap.get(item.loja_preferencial_id) : undefined;
+    // Tentar resolver objetos estáticos se houver correspondência pelo nome
+    const prod = prodMapByNome.get(item.nome_produto.toLowerCase());
+    const catObj = item.categoria ? catMapByNome.get(item.categoria.toLowerCase()) : undefined;
+    const lojaObj = item.loja ? lojaMapByNome.get(item.loja.toLowerCase()) : undefined;
 
-    // Encontrar preço mais barato atual no histórico para este produto
-    const precosProd = historicoPrecos.filter((h) => h.produto_id === item.produto_id);
-    precosProd.sort((a, b) => a.preco - b.preco);
-    const precoMaisBaixo = precosProd[0];
+    // Encontrar melhor preço registado para o produto correspondente se existir
+    let precoMaisBaixo: number | undefined = undefined;
+    let lojaMaisBarataNome: string | undefined = undefined;
+
+    if (prod) {
+      const precosProd = historicoPrecos.filter((h) => h.produto_id === prod.id);
+      precosProd.sort((a, b) => a.preco - b.preco);
+      const minPrecoObj = precosProd[0];
+      if (minPrecoObj) {
+        precoMaisBaixo = minPrecoObj.preco;
+        lojaMaisBarataNome = lojas.find((l) => l.id === minPrecoObj.loja_id)?.nome;
+      }
+    }
 
     return {
       ...item,
       produto: prod,
-      categoria: cat,
-      loja_preferencial: lojaPref,
-      preco_mais_baixo_atual: precoMaisBaixo?.preco,
-      loja_mais_barata_nome: precoMaisBaixo ? lojaMap.get(precoMaisBaixo.loja_id)?.nome : undefined,
+      categoria_obj: catObj,
+      loja_obj: lojaObj,
+      preco_mais_baixo_atual: precoMaisBaixo,
+      loja_mais_barata_nome: lojaMaisBarataNome,
     };
   });
 
@@ -172,13 +220,13 @@ export async function getListaComprasDetalhada(listaId: string): Promise<ListaCo
   const itens_concluidos = itensDetalhados.filter((i) => i.estado === 'comprado').length;
 
   const custo_total_estimado = itensDetalhados.reduce((acc, item) => {
-    const precoUnitario = item.preco_unitario_pago ?? item.preco_mais_baixo_atual ?? 0;
+    const precoUnitario = item.preco ?? item.preco_mais_baixo_atual ?? 0;
     return acc + (precoUnitario * item.quantidade);
   }, 0);
 
   const custo_total_real = itensDetalhados.reduce((acc, item) => {
-    if (item.estado === 'comprado' && item.preco_unitario_pago) {
-      return acc + (item.preco_unitario_pago * item.quantidade);
+    if (item.estado === 'comprado' && item.preco) {
+      return acc + (item.preco * item.quantidade);
     }
     return acc;
   }, 0);

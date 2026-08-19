@@ -6,7 +6,11 @@ import { BottomSheet } from '../components/BottomSheet';
 import { Package, Search, Plus, Minus, AlertTriangle, Trash2, Tag } from 'lucide-react';
 import { Produto } from '../types/database';
 
-export function ProdutosView() {
+interface ProdutosViewProps {
+  currency: string;
+}
+
+export function ProdutosView({ currency }: ProdutosViewProps) {
   const [selectedCategoriaId, setSelectedCategoriaId] = useState<string | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
@@ -174,7 +178,7 @@ export function ProdutosView() {
 
                     <div style={{ fontSize: '13px', color: 'var(--ios-label-secondary)', marginTop: '2px' }}>
                       Mínimo: {prod.stock_minimo} {prod.unidade_medida || 'un'}
-                      {menorPreco !== null && ` • Melhor Preço: ${menorPreco.toFixed(2)}€`}
+                      {menorPreco !== null && ` • Melhor Preço: ${menorPreco.toFixed(2)} ${currency}`}
                     </div>
                   </div>
 

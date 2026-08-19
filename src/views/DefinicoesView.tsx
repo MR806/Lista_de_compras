@@ -2,9 +2,14 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Header } from '../components/Header';
 import { Database, RefreshCw, Smartphone, Store, Package, ShoppingBag, History, Tags } from 'lucide-react';
-import { INITIAL_LOJAS, INITIAL_CATEGORIAS, INITIAL_PRODUTOS, INITIAL_HISTORICO_PRECOS, INITIAL_LISTAS, INITIAL_ITENS_LISTA } from '../db/seed';
+import { INITIAL_LOJAS, INITIAL_CATEGORIAS, INITIAL_PRODUTOS, INITIAL_HISTORICO_PRECOS, INITIAL_LISTAS, INITIAL_ITENS_LISTA, INITIAL_SUGESTOES } from '../db/seed';
 
-export function DefinicoesView() {
+interface DefinicoesViewProps {
+  currency: string;
+  onCurrencyChange: (currency: string) => void;
+}
+
+export function DefinicoesView({ currency, onCurrencyChange }: DefinicoesViewProps) {
   const countLojas = useLiveQuery(() => db.lojas.count(), []) ?? 0;
   const countCategorias = useLiveQuery(() => db.categorias.count(), []) ?? 0;
   const countProdutos = useLiveQuery(() => db.produtos.count(), []) ?? 0;
@@ -14,13 +19,14 @@ export function DefinicoesView() {
 
   const handleResetDatabase = async () => {
     if (confirm('Tem a certeza que deseja repor os dados de exemplo da base de dados?')) {
-      await db.transaction('rw', [db.lojas, db.categorias, db.produtos, db.historico_precos, db.listas_compras, db.itens_lista], async () => {
+      await db.transaction('rw', [db.lojas, db.categorias, db.produtos, db.historico_precos, db.listas_compras, db.itens_lista, db.sugestoes_historico], async () => {
         await db.lojas.clear();
         await db.categorias.clear();
         await db.produtos.clear();
         await db.historico_precos.clear();
         await db.listas_compras.clear();
         await db.itens_lista.clear();
+        await db.sugestoes_historico.clear();
 
         await db.lojas.bulkAdd(INITIAL_LOJAS);
         await db.categorias.bulkAdd(INITIAL_CATEGORIAS);
@@ -28,6 +34,7 @@ export function DefinicoesView() {
         await db.historico_precos.bulkAdd(INITIAL_HISTORICO_PRECOS);
         await db.listas_compras.bulkAdd(INITIAL_LISTAS);
         await db.itens_lista.bulkAdd(INITIAL_ITENS_LISTA);
+        await db.sugestoes_historico.bulkAdd(INITIAL_SUGESTOES);
       });
       alert('Base de dados restaurada com sucesso!');
     }
@@ -56,6 +63,39 @@ export function DefinicoesView() {
             <div style={{ fontWeight: '600', fontSize: '16px' }}>IndexedDB Relacional (Dexie)</div>
             <div style={{ fontSize: '13px', color: 'var(--ios-label-secondary)', marginTop: '2px' }}>
               Base de dados local persistente e rápida
+            </div>
+          </div>
+        </div>
+
+        {/* Escolha de Moeda */}
+        <h2 style={{ fontSize: '13px', fontWeight: '500', color: 'var(--ios-label-secondary)', textTransform: 'uppercase', marginBottom: '8px', marginLeft: '4px' }}>
+          Moeda de Preferência
+        </h2>
+        <div className="ios-card" style={{ padding: '12px 16px', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '15px', fontWeight: '500' }}>Moeda Ativa</span>
+            <div style={{ display: 'flex', gap: '6px', background: 'var(--ios-gray-ultra-light)', padding: '4px', borderRadius: '8px' }}>
+              {['EUR', 'MZN', 'USD'].map((c) => (
+                <button
+                  type="button"
+                  key={c}
+                  onClick={() => onCurrencyChange(c)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    background: currency === c ? 'var(--ios-card-bg)' : 'transparent',
+                    color: currency === c ? 'var(--ios-blue)' : 'var(--ios-label-secondary)',
+                    boxShadow: currency === c ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {c}
+                </button>
+              ))}
             </div>
           </div>
         </div>

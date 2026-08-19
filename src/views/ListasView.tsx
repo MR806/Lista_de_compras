@@ -1,6 +1,8 @@
+
+
 import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db';
+import { db, salvarNoHistorico } from '../db';
 import { Header } from '../components/Header';
 import { BottomSheet } from '../components/BottomSheet';
 import { ActionSheet } from '../components/ActionSheet';
@@ -15,13 +17,17 @@ import {
   ChevronRight,
   PackageOpen,
   Info,
-  Store as StoreIcon,
   Circle,
-  Plus
+  Plus,
+  Bookmark
 } from 'lucide-react';
-import { ListaCompras, ItemLista, Produto, Categoria, Loja, HistoricoPreco } from '../types/database';
+import { ListaCompras, ItemLista, Produto, HistoricoPreco } from '../types/database';
 
-export function ListasView() {
+interface ListasViewProps {
+  currency: string;
+}
+
+export function ListasView({ currency }: ListasViewProps) {
   const [activeListId, setActiveListId] = useState<string | null>(null);
   
   // Modais e Menus
@@ -29,19 +35,22 @@ export function ListasView() {
   const [isCreateSheetOpen, setIsCreateSheetOpen] = useState(false);
   const [isCloneSheetOpen, setIsCloneSheetOpen] = useState(false);
 
-  // Modais da Etapa 4 e Adicionar Item
+  // Modais de Compra e Detalhe de Histórico
   const [isPurchaseSheetOpen, setIsPurchaseSheetOpen] = useState(false);
   const [purchaseItem, setPurchaseItem] = useState<ItemLista | null>(null);
   const [purchasePrice, setPurchasePrice] = useState<string>('');
-  const [purchaseLojaId, setPurchaseLojaId] = useState<string>('');
+  const [purchaseLojaNome, setPurchaseLojaNome] = useState<string>('');
 
   const [isHistorySheetOpen, setIsHistorySheetOpen] = useState(false);
-  const [historyProduto, setHistoryProduto] = useState<Produto | null>(null);
+  const [historyProdutoNome, setHistoryProdutoNome] = useState<string>('');
 
+  // Form de Novo Item (Livre / Desacoplado)
   const [isAddItemSheetOpen, setIsAddItemSheetOpen] = useState(false);
-  const [addItemProdutoId, setAddItemProdutoId] = useState<string>('');
+  const [addItemNome, setAddItemNome] = useState<string>('');
+  const [addItemCategoria, setAddItemCategoria] = useState<string>('');
   const [addItemQuantidade, setAddItemQuantidade] = useState<number>(1);
-  const [addItemLojaId, setAddItemLojaId] = useState<string>('');
+  const [addItemLoja, setAddItemLoja] = useState<string>('');
+  const [addItemPreco, setAddItemPreco] = useState<string>('');
   const [addItemNotas, setAddItemNotas] = useState<string>('');
 
   // Formulário de nova lista
@@ -53,30 +62,27 @@ export function ListasView() {
   const listas = useLiveQuery(() => db.listas_compras.toArray(), []) || [];
   const itens = useLiveQuery(() => db.itens_lista.toArray(), []) || [];
   const produtos = useLiveQuery(() => db.produtos.toArray(), []) || [];
-  const categorias = useLiveQuery(() => db.categorias.toArray(), []) || [];
   const lojas = useLiveQuery(() => db.lojas.toArray(), []) || [];
   const historicoPrecos = useLiveQuery(() => db.historico_precos.toArray(), []) || [];
+  
+  // Consulta de Sugestões de Autocompletar / Histórico
+  const sugestoes = useLiveQuery(() => db.sugestoes_historico.toArray(), []) || [];
 
-  const produtoMap = new Map<string, Produto>(produtos.map((p) => [p.id, p]));
-  const categoriaMap = new Map<string, Categoria>(categorias.map((c) => [c.id, c]));
-  const lojaMap = new Map<string, Loja>(lojas.map((l) => [l.id, l]));
+  const produtoMapByNome = new Map<string, Produto>(produtos.map((p) => [p.nome.toLowerCase(), p]));
+
+  // Extração de sugestões por tipo para o datalist autocomplete
+  const produtosSugestao = sugestoes.filter((s) => s.tipo === 'produto').map((s) => s.valor);
+  const categoriasSugestao = sugestoes.filter((s) => s.tipo === 'categoria').map((s) => s.valor);
+  const lojasSugestao = sugestoes.filter((s) => s.tipo === 'loja').map((s) => s.valor);
+  const quantidadesSugestao = sugestoes.filter((s) => s.tipo === 'quantidade').map((s) => s.valor);
 
   // Obter última loja usada (persistência local)
   useEffect(() => {
-    const savedLojaId = localStorage.getItem('last_loja_id');
-    if (savedLojaId) {
-      setPurchaseLojaId(savedLojaId);
-    } else if (lojas.length > 0) {
-      setPurchaseLojaId(lojas[0].id);
+    const savedLoja = localStorage.getItem('last_loja_nome');
+    if (savedLoja) {
+      setPurchaseLojaNome(savedLoja);
     }
-  }, [lojas]);
-
-  // Set default product when add item modal opens
-  useEffect(() => {
-    if (produtos.length > 0 && !addItemProdutoId) {
-      setAddItemProdutoId(produtos[0].id);
-    }
-  }, [produtos, addItemProdutoId]);
+  }, []);
 
   // Separar listas abertas e fechadas
   const listasAbertas = listas.filter((l) => l.estado === 'aberta');
@@ -105,7 +111,7 @@ export function ListasView() {
       setIsCreateSheetOpen(false);
       setActiveListId(novaLista.id);
     } catch (err) {
-      console.error('Erro ao adicionar lista:', err);
+      console.error('Erro ao adicionar lista compras:', err);
     } finally {
       setIsSubmitting(false);
     }
@@ -135,12 +141,13 @@ export function ListasView() {
       const novosItens: ItemLista[] = itensOriginais.map((item, idx) => ({
         id: `itm-${Date.now()}-${idx}`,
         lista_id: novaListaId,
-        produto_id: item.produto_id,
-        loja_preferencial_id: item.loja_preferencial_id,
+        nome_produto: item.nome_produto,
+        categoria: item.categoria,
+        loja: item.loja,
         quantidade: item.quantidade,
         estado: 'pendente',
-        preco_unitario_pago: undefined,
-        notas: item.notas,
+        preco: undefined,
+        nota_adicional: item.nota_adicional,
         criado_em: new Date().toISOString(),
       }));
 
@@ -180,44 +187,66 @@ export function ListasView() {
     await db.itens_lista.delete(itemId);
   };
 
-  // Lógica de adicionar item ao carrinho de compras da lista ativa
+  // Lógica de adicionar item livre ao carrinho de compras
   const handleAddItemToList = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeListId || !addItemProdutoId) return;
+    if (!activeListId || !addItemNome.trim()) return;
 
     try {
-      // Verificar se o produto já existe na lista
+      const cleanNome = addItemNome.trim();
+      const cleanCategoria = addItemCategoria.trim() || 'Despensa & Mercearia';
+      const cleanLoja = addItemLoja.trim() || undefined;
+      const cleanPreco = addItemPreco.trim() ? Number(addItemPreco) : undefined;
+      const cleanQtd = Number(addItemQuantidade) || 1;
+
+      // Verificar duplicados pendentes com o mesmo nome na mesma lista
       const existente = itens.find(
-        (i) => i.lista_id === activeListId && i.produto_id === addItemProdutoId && i.estado === 'pendente'
+        (i) => i.lista_id === activeListId &&
+               i.nome_produto.toLowerCase() === cleanNome.toLowerCase() &&
+               i.estado === 'pendente'
       );
 
       if (existente) {
-        // Apenas atualizar quantidade
         await db.itens_lista.update(existente.id, {
-          quantidade: existente.quantidade + Number(addItemQuantidade),
-          notas: addItemNotas.trim() || existente.notas
+          quantidade: existente.quantidade + cleanQtd,
+          nota_adicional: addItemNotas.trim() || existente.nota_adicional,
+          loja: cleanLoja || existente.loja,
+          preco: cleanPreco ?? existente.preco,
         });
       } else {
-        // Criar novo item
         const novoItem: ItemLista = {
           id: `itm-${Date.now()}`,
           lista_id: activeListId,
-          produto_id: addItemProdutoId,
-          quantidade: Number(addItemQuantidade) || 1,
+          nome_produto: cleanNome,
+          categoria: cleanCategoria,
+          quantidade: cleanQtd,
           estado: 'pendente',
-          loja_preferencial_id: addItemLojaId || undefined,
-          notas: addItemNotas.trim() || undefined,
+          nota_adicional: addItemNotas.trim() || undefined,
+          loja: cleanLoja,
+          preco: cleanPreco,
           criado_em: new Date().toISOString()
         };
         await db.itens_lista.add(novoItem);
       }
 
+      // Registo dinâmico no histórico de sugestões para autocomplete futuro (Tarefa 4)
+      await salvarNoHistorico('produto', cleanNome);
+      await salvarNoHistorico('categoria', cleanCategoria);
+      if (cleanLoja) {
+        await salvarNoHistorico('loja', cleanLoja);
+      }
+      await salvarNoHistorico('quantidade', String(cleanQtd));
+
       // Limpar form
+      setAddItemNome('');
+      setAddItemCategoria('');
       setAddItemQuantidade(1);
+      setAddItemLoja('');
+      setAddItemPreco('');
       setAddItemNotas('');
       setIsAddItemSheetOpen(false);
     } catch (err) {
-      console.error('Erro ao adicionar item à lista:', err);
+      console.error('Erro ao adicionar item livre à lista:', err);
     }
   };
 
@@ -228,37 +257,39 @@ export function ListasView() {
     if (item.estado === 'comprado') {
       db.itens_lista.update(item.id, {
         estado: 'pendente',
-        preco_unitario_pago: undefined
+        preco: undefined
       });
     } else {
       setPurchaseItem(item);
       
-      const precosProd = historicoPrecos.filter((h) => h.produto_id === item.produto_id);
-      if (precosProd.length > 0) {
-        const melhorPreco = Math.min(...precosProd.map((h) => h.preco));
-        setPurchasePrice(melhorPreco.toString());
+      // Sugerir preço se já houver registo
+      if (item.preco) {
+        setPurchasePrice(item.preco.toString());
       } else {
-        setPurchasePrice('');
-      }
-
-      if (item.loja_preferencial_id) {
-        setPurchaseLojaId(item.loja_preferencial_id);
-      } else {
-        const lastLoja = localStorage.getItem('last_loja_id');
-        if (lastLoja) {
-          setPurchaseLojaId(lastLoja);
-        } else if (lojas.length > 0) {
-          setPurchaseLojaId(lojas[0].id);
+        // Encontrar melhor preço anterior para este produto por nome correspondente
+        const prod = produtoMapByNome.get(item.nome_produto.toLowerCase());
+        if (prod) {
+          const precosProd = historicoPrecos.filter((h) => h.produto_id === prod.id);
+          if (precosProd.length > 0) {
+            const melhorPreco = Math.min(...precosProd.map((h) => h.preco));
+            setPurchasePrice(melhorPreco.toString());
+          } else {
+            setPurchasePrice('');
+          }
+        } else {
+          setPurchasePrice('');
         }
       }
+
+      setPurchaseLojaNome(item.loja || localStorage.getItem('last_loja_nome') || '');
       setIsPurchaseSheetOpen(true);
     }
   };
 
-  // Guardar registo de compra e preço
+  // Guardar registo de compra, preço e loja livre
   const handleSavePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!purchaseItem || !purchasePrice.trim() || !purchaseLojaId) return;
+    if (!purchaseItem || !purchasePrice.trim()) return;
 
     const precoNum = Number(purchasePrice);
     if (isNaN(precoNum) || precoNum < 0) {
@@ -266,29 +297,57 @@ export function ListasView() {
       return;
     }
 
+    const cleanLoja = purchaseLojaNome.trim();
+
     try {
+      // 1. Atualizar item da lista
       await db.itens_lista.update(purchaseItem.id, {
         estado: 'comprado',
-        preco_unitario_pago: precoNum,
-        loja_preferencial_id: purchaseLojaId
+        preco: precoNum,
+        loja: cleanLoja || undefined
       });
 
-      const novoHistorico: HistoricoPreco = {
-        id: `hist-${Date.now()}`,
-        produto_id: purchaseItem.produto_id,
-        loja_id: purchaseLojaId,
-        preco: precoNum,
-        data: new Date().toISOString().split('T')[0],
-        em_promocao: false,
-        criado_em: new Date().toISOString()
-      };
+      // Guardar sugestões de autocomplete
+      if (cleanLoja) {
+        await salvarNoHistorico('loja', cleanLoja);
+        localStorage.setItem('last_loja_name', cleanLoja);
+      }
 
-      await db.historico_precos.add(novoHistorico);
-
-      localStorage.setItem('last_loja_id', purchaseLojaId);
-
-      const prod = produtoMap.get(purchaseItem.produto_id);
+      // Lógica de compatibilidade com stock estático
+      const prod = produtoMapByNome.get(purchaseItem.nome_produto.toLowerCase());
       if (prod) {
+        let lojaId = '';
+        if (cleanLoja) {
+          const lojaObj = lojas.find(l => l.nome.toLowerCase() === cleanLoja.toLowerCase());
+          if (lojaObj) {
+            lojaId = lojaObj.id;
+          } else {
+            // Criar loja correspondente para manter relacionamentos
+            lojaId = `loj-${Date.now()}`;
+            await db.lojas.add({
+              id: lojaId,
+              nome: cleanLoja,
+              cor_identificadora: '#8E8E93',
+              criado_em: new Date().toISOString()
+            });
+          }
+        } else if (lojas.length > 0) {
+          lojaId = lojas[0].id;
+        }
+
+        if (lojaId) {
+          const novoHistorico: HistoricoPreco = {
+            id: `hist-${Date.now()}`,
+            produto_id: prod.id,
+            loja_id: lojaId,
+            preco: precoNum,
+            data: new Date().toISOString().split('T')[0],
+            criado_em: new Date().toISOString()
+          };
+          await db.historico_precos.add(novoHistorico);
+        }
+
+        // Incrementar stock em casa
         await db.produtos.update(prod.id, {
           stock_atual: prod.stock_atual + purchaseItem.quantidade
         });
@@ -297,18 +356,15 @@ export function ListasView() {
       setIsPurchaseSheetOpen(false);
       setPurchaseItem(null);
       setPurchasePrice('');
+      setPurchaseLojaNome('');
     } catch (err) {
       console.error('Erro ao registar compra:', err);
     }
   };
 
-  // Detalhe de Histórico do Produto ao clicar no Nome
-  const handleProductClick = (produtoId: string) => {
-    const prod = produtoMap.get(produtoId);
-    if (prod) {
-      setHistoryProduto(prod);
-      setIsHistorySheetOpen(true);
-    }
+  const handleProductClick = (nomeProduto: string) => {
+    setHistoryProdutoNome(nomeProduto);
+    setIsHistorySheetOpen(true);
   };
 
   // Renderização da vista de detalhe de uma lista
@@ -327,6 +383,18 @@ export function ListasView() {
     const concluidos = itensDaLista.filter((i) => i.estado === 'comprado').length;
     const percentagem = totalItens > 0 ? Math.round((concluidos / totalItens) * 100) : 0;
 
+    // Calcular custo real e estimado com a moeda ativa
+    const custoEstimado = sortedItens.reduce((acc, item) => {
+      return acc + ((item.preco || 0) * item.quantidade);
+    }, 0);
+
+    const custoReal = sortedItens.reduce((acc, item) => {
+      if (item.estado === 'comprado' && item.preco) {
+        return acc + (item.preco * item.quantidade);
+      }
+      return acc;
+    }, 0);
+
     return (
       <>
         <header className="ios-header">
@@ -344,12 +412,7 @@ export function ListasView() {
           </h2>
           <button
             type="button"
-            onClick={() => {
-              if (produtos.length > 0 && !addItemProdutoId) {
-                setAddItemProdutoId(produtos[0].id);
-              }
-              setIsAddItemSheetOpen(true);
-            }}
+            onClick={() => setIsAddItemSheetOpen(true)}
             className="ios-action-btn"
             style={{ padding: '8px 12px', background: 'transparent', flexShrink: 0 }}
             title="Adicionar Item"
@@ -361,11 +424,15 @@ export function ListasView() {
         <div className="view-container" style={{ animation: 'iosFadeIn 0.2s ease-out' }}>
           <div className="ios-card" style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--ios-label-secondary)' }}>
-              <span>Orçamento Estimado: {lista?.orcamento_estimado ? `${lista.orcamento_estimado.toFixed(2)}€` : 'N/A'}</span>
+              <span>Orçamento Estimado: {lista?.orcamento_estimado ? `${lista.orcamento_estimado.toFixed(2)} ${currency}` : 'N/A'}</span>
               <span style={{ fontWeight: '600', color: 'var(--ios-blue)' }}>{concluidos} / {totalItens} comprados</span>
             </div>
             <div style={{ width: '100%', height: '6px', background: 'var(--ios-gray-light)', borderRadius: '3px', overflow: 'hidden' }}>
               <div style={{ width: `${percentagem}%`, height: '100%', background: 'var(--ios-blue)', borderRadius: '3px', transition: 'width 0.3s ease' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--ios-label-secondary)', marginTop: '4px' }}>
+              <span>Estimado total: {custoEstimado.toFixed(2)} {currency}</span>
+              <span>Custo real: {custoReal.toFixed(2)} {currency}</span>
             </div>
           </div>
 
@@ -410,8 +477,6 @@ export function ListasView() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {sortedItens.map((item) => {
-                const prod = produtoMap.get(item.produto_id);
-                const cat = prod ? categoriaMap.get(prod.categoria_id) : undefined;
                 const isComprado = item.estado === 'comprado';
 
                 return (
@@ -456,7 +521,7 @@ export function ListasView() {
 
                       <div
                         style={{ flex: 1, cursor: 'pointer' }}
-                        onClick={() => handleProductClick(item.produto_id)}
+                        onClick={() => handleProductClick(item.nome_produto)}
                       >
                         <div style={{
                           fontWeight: '600',
@@ -464,32 +529,37 @@ export function ListasView() {
                           textDecoration: isComprado ? 'line-through' : 'none',
                           color: 'var(--ios-label-primary)'
                         }}>
-                          {prod?.nome || 'Produto Desconhecido'}
+                          {item.nome_produto}
                         </div>
                         
                         <div style={{ fontSize: '12px', color: 'var(--ios-label-secondary)', display: 'flex', gap: '6px', marginTop: '2px', alignItems: 'center' }}>
-                          <span>Qtd: {item.quantidade} {prod?.unidade_medida || 'un'}</span>
-                          {cat && (
-                            <span style={{ color: cat.cor_badge }}>
-                              • {cat.nome}
+                          <span>Qtd: {item.quantidade}</span>
+                          {item.categoria && (
+                            <span style={{ color: 'var(--ios-purple)', background: 'rgba(175, 82, 222, 0.1)', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: '500' }}>
+                              {item.categoria}
                             </span>
                           )}
-                          {item.preco_unitario_pago && (
+                          {item.loja && (
+                            <span style={{ color: 'var(--ios-blue)' }}>
+                              • {item.loja}
+                            </span>
+                          )}
+                          {item.preco && (
                             <span style={{ color: 'var(--ios-green)', fontWeight: '600' }}>
-                              • Pago: {item.preco_unitario_pago.toFixed(2)}€
+                              • Pago: {item.preco.toFixed(2)} {currency}
                             </span>
                           )}
                         </div>
-                        {item.notas && (
+                        {item.nota_adicional && (
                           <div style={{ fontSize: '11px', color: 'var(--ios-orange)', fontStyle: 'italic', marginTop: '2px' }}>
-                            Nota: {item.notas}
+                            Nota: {item.nota_adicional}
                           </div>
                         )}
                       </div>
 
                       <button
                         type="button"
-                        onClick={() => handleProductClick(item.produto_id)}
+                        onClick={() => handleProductClick(item.nome_produto)}
                         style={{ background: 'transparent', border: 'none', color: 'var(--ios-blue)', cursor: 'pointer', opacity: 0.8 }}
                       >
                         <Info size={18} />
@@ -502,7 +572,21 @@ export function ListasView() {
           )}
         </div>
 
-        {/* Bottom Sheet: Adicionar Item à Lista */}
+        {/* Datalists de sugestão para autocomplete nativo (HTML5 Datalsit) */}
+        <datalist id="produtos-datalist">
+          {produtosSugestao.map((p) => <option key={p} value={p} />)}
+        </datalist>
+        <datalist id="categorias-datalist">
+          {categoriasSugestao.map((c) => <option key={c} value={c} />)}
+        </datalist>
+        <datalist id="lojas-datalist">
+          {lojasSugestao.map((l) => <option key={l} value={l} />)}
+        </datalist>
+        <datalist id="quantidades-datalist">
+          {quantidadesSugestao.map((q) => <option key={q} value={q} />)}
+        </datalist>
+
+        {/* Bottom Sheet: Adicionar Item Livre à Lista */}
         <BottomSheet
           isOpen={isAddItemSheetOpen}
           onClose={() => setIsAddItemSheetOpen(false)}
@@ -510,74 +594,86 @@ export function ListasView() {
         >
           <form onSubmit={handleAddItemToList} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div className="ios-form-group">
-              <label className="ios-form-label">Selecionar Produto *</label>
-              {produtos.length === 0 ? (
-                <div style={{ fontSize: '14px', color: 'var(--ios-red)' }}>
-                  Não existem produtos registados no catálogo. Crie-os na tab "Produtos" primeiro!
-                </div>
-              ) : (
-                <select
-                  className="ios-select"
-                  value={addItemProdutoId}
-                  onChange={(e) => setAddItemProdutoId(e.target.value)}
-                  required
-                >
-                  {produtos.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nome}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <label className="ios-form-label">Nome do Produto *</label>
+              <input
+                type="text"
+                list="produtos-datalist"
+                className="ios-input"
+                placeholder="Ex: Arroz, Leite, etc..."
+                value={addItemNome}
+                onChange={(e) => setAddItemNome(e.target.value)}
+                required
+                autoFocus
+              />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div className="ios-form-group">
+                <label className="ios-form-label">Categoria</label>
+                <input
+                  type="text"
+                  list="categorias-datalist"
+                  className="ios-input"
+                  placeholder="Ex: Mercearia, Frutas..."
+                  value={addItemCategoria}
+                  onChange={(e) => setAddItemCategoria(e.target.value)}
+                />
+              </div>
+
+              <div className="ios-form-group">
                 <label className="ios-form-label">Quantidade</label>
                 <input
                   type="number"
-                  step="0.5"
+                  step="0.1"
                   min="0.1"
+                  list="quantidades-datalist"
                   className="ios-input"
                   value={addItemQuantidade}
                   onChange={(e) => setAddItemQuantidade(Number(e.target.value))}
                   required
                 />
               </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="ios-form-group">
+                <label className="ios-form-label">Supermercado/Loja</label>
+                <input
+                  type="text"
+                  list="lojas-datalist"
+                  className="ios-input"
+                  placeholder="Ex: Pingo Doce, Continente..."
+                  value={addItemLoja}
+                  onChange={(e) => setAddItemLoja(e.target.value)}
+                />
+              </div>
 
               <div className="ios-form-group">
-                <label className="ios-form-label">Supermercado Preferencial</label>
-                <select
-                  className="ios-select"
-                  value={addItemLojaId}
-                  onChange={(e) => setAddItemLojaId(e.target.value)}
-                >
-                  <option value="">Qualquer loja...</option>
-                  {lojas.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.nome}
-                    </option>
-                  ))}
-                </select>
+                <label className="ios-form-label">Preço Unitário (Estimado)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className="ios-input"
+                  placeholder="Opcional..."
+                  value={addItemPreco}
+                  onChange={(e) => setAddItemPreco(e.target.value)}
+                />
               </div>
             </div>
 
             <div className="ios-form-group">
-              <label className="ios-form-label">Notas Adicionais (Opcional)</label>
+              <label className="ios-form-label">Nota Adicional</label>
               <input
                 type="text"
                 className="ios-input"
-                placeholder="Ex: Embalagem poupança, marca própria..."
+                placeholder="Ex: Marca própria, saco grande..."
                 value={addItemNotas}
                 onChange={(e) => setAddItemNotas(e.target.value)}
               />
             </div>
 
-            <button
-              type="submit"
-              className="ios-submit-btn"
-              disabled={produtos.length === 0}
-            >
+            <button type="submit" className="ios-submit-btn">
               Adicionar à Lista
             </button>
           </form>
@@ -594,11 +690,11 @@ export function ListasView() {
         >
           <form onSubmit={handleSavePurchase} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <p style={{ fontSize: '14px', color: 'var(--ios-label-secondary)' }}>
-              Introduza o preço pago pelo produto para guardar no histórico de comparativos.
+              Introduza o preço final pago pelo produto para guardar no histórico de comparativos.
             </p>
 
             <div className="ios-form-group">
-              <label className="ios-form-label">Preço Unitário Atual (€) *</label>
+              <label className="ios-form-label">Preço Unitário Pago ({currency}) *</label>
               <input
                 type="number"
                 step="0.01"
@@ -614,94 +710,85 @@ export function ListasView() {
 
             <div className="ios-form-group">
               <label className="ios-form-label">Supermercado / Loja *</label>
-              <select
-                className="ios-select"
-                value={purchaseLojaId}
-                onChange={(e) => setPurchaseLojaId(e.target.value)}
+              <input
+                type="text"
+                list="lojas-datalist"
+                className="ios-input"
+                placeholder="Ex: Continente, Pingo Doce..."
+                value={purchaseLojaNome}
+                onChange={(e) => setPurchaseLojaNome(e.target.value)}
                 required
-              >
-                <option value="" disabled>Selecione onde comprou...</option>
-                {lojas.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.nome}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <button type="submit" className="ios-submit-btn">
-              Confirmar & Atualizar Stock
+              Confirmar & Sincronizar Stock
             </button>
           </form>
         </BottomSheet>
 
-        {/* Bottom Sheet: Histórico de Preços do Produto */}
+        {/* Bottom Sheet: Histórico de Preços do Produto (Livre / Catálogo) */}
         <BottomSheet
           isOpen={isHistorySheetOpen}
           onClose={() => {
             setIsHistorySheetOpen(false);
-            setHistoryProduto(null);
+            setHistoryProdutoNome('');
           }}
-          title={`Histórico: ${historyProduto?.nome || ''}`}
+          title={`Histórico: ${historyProdutoNome}`}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {historyProduto && (
-              <>
-                {/* Comparativo rápido */}
-                {(() => {
-                  const hist = historicoPrecos.filter((h) => h.produto_id === historyProduto.id);
-                  if (hist.length === 0) {
-                    return (
-                      <div className="ios-card" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--ios-gray-ultra-light)' }}>
-                        <Info size={16} color="var(--ios-label-secondary)" />
-                        <span style={{ fontSize: '13px', color: 'var(--ios-label-secondary)' }}>
-                          Nenhum histórico de compras registado para este produto ainda.
+            {/* Comparar preços de compras anteriores com este exato nome (Tarefa 4) */}
+            {(() => {
+              const histItens = itens.filter(
+                (i) => i.nome_produto.toLowerCase() === historyProdutoNome.toLowerCase() && i.preco !== undefined
+              );
+
+              if (histItens.length === 0) {
+                return (
+                  <div className="ios-card" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--ios-gray-ultra-light)' }}>
+                    <Info size={16} color="var(--ios-label-secondary)" />
+                    <span style={{ fontSize: '13px', color: 'var(--ios-label-secondary)' }}>
+                      Nenhum histórico de compras arquivado para este produto.
+                    </span>
+                  </div>
+                );
+              }
+
+              const precos = histItens.map((i) => i.preco as number);
+              const min = Math.min(...precos);
+              const max = Math.max(...precos);
+              const melhorRegisto = histItens.find((i) => i.preco === min);
+
+              return (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
+                    <div className="ios-card" style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(52, 199, 89, 0.05)', borderColor: 'rgba(52, 199, 89, 0.1)' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--ios-green)', fontWeight: '600', textTransform: 'uppercase' }}>Melhor Preço</span>
+                      <span style={{ fontSize: '20px', fontWeight: '700', color: 'var(--ios-green)' }}>{min.toFixed(2)} {currency}</span>
+                      {melhorRegisto && (
+                        <span style={{ fontSize: '11px', color: 'var(--ios-label-secondary)' }}>
+                          em {melhorRegisto.loja || 'Loja Indefinida'}
                         </span>
-                      </div>
-                    );
-                  }
-
-                  const precos = hist.map((h) => h.preco);
-                  const min = Math.min(...precos);
-                  const max = Math.max(...precos);
-                  const melhorLoja = hist.find((h) => h.preco === min);
-
-                  return (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
-                      <div className="ios-card" style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(52, 199, 89, 0.05)', borderColor: 'rgba(52, 199, 89, 0.1)' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--ios-green)', fontWeight: '600', textTransform: 'uppercase' }}>Melhor Preço</span>
-                        <span style={{ fontSize: '20px', fontWeight: '700', color: 'var(--ios-green)' }}>{min.toFixed(2)}€</span>
-                        {melhorLoja && (
-                          <span style={{ fontSize: '11px', color: 'var(--ios-label-secondary)' }}>
-                            em {lojaMap.get(melhorLoja.loja_id)?.nome || 'Loja'}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="ios-card" style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'var(--ios-gray-ultra-light)' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--ios-label-secondary)', fontWeight: '600', textTransform: 'uppercase' }}>Preço Máximo</span>
-                        <span style={{ fontSize: '20px', fontWeight: '700' }}>{max.toFixed(2)}€</span>
-                        <span style={{ fontSize: '11px', color: 'var(--ios-label-secondary)' }}>Diferença: {(((max - min) / min) * 100).toFixed(0)}%</span>
-                      </div>
+                      )}
                     </div>
-                  );
-                })()}
 
-                {/* Lista Completa de Registos */}
-                <h4 style={{ fontSize: '12px', fontWeight: '500', color: 'var(--ios-label-secondary)', textTransform: 'uppercase', marginTop: '6px' }}>
-                  Registos Anteriores
-                </h4>
+                    <div className="ios-card" style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'var(--ios-gray-ultra-light)' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--ios-label-secondary)', fontWeight: '600', textTransform: 'uppercase' }}>Preço Máximo</span>
+                      <span style={{ fontSize: '20px', fontWeight: '700' }}>{max.toFixed(2)} {currency}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--ios-label-secondary)' }}>Diferença: {min > 0 ? (((max - min) / min) * 100).toFixed(0) : 0}%</span>
+                    </div>
+                  </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto' }}>
-                  {[...historicoPrecos]
-                    .filter((h) => h.produto_id === historyProduto.id)
-                    .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
-                    .map((hp) => {
-                      const loja = lojaMap.get(hp.loja_id);
+                  <h4 style={{ fontSize: '12px', fontWeight: '500', color: 'var(--ios-label-secondary)', textTransform: 'uppercase', marginTop: '6px' }}>
+                    Compras Anteriores
+                  </h4>
 
-                      return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto' }}>
+                    {[...histItens]
+                      .sort((a, b) => new Date(b.criado_em || '').getTime() - new Date(a.criado_em || '').getTime())
+                      .map((h, idx) => (
                         <div
-                          key={hp.id}
+                          key={idx}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -713,21 +800,23 @@ export function ListasView() {
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <StoreIcon size={14} color="var(--ios-blue)" />
+                            <Bookmark size={14} color="var(--ios-blue)" />
                             <div>
-                              <div style={{ fontSize: '14px', fontWeight: '600' }}>{loja?.nome || 'Supermercado'}</div>
+                              <div style={{ fontSize: '14px', fontWeight: '600' }}>{h.loja || 'Loja Desconhecida'}</div>
                               <div style={{ fontSize: '11px', color: 'var(--ios-label-secondary)' }}>
-                                {new Date(hp.data).toLocaleDateString('pt-PT')}
+                                Qtd: {h.quantidade} • {h.criado_em ? new Date(h.criado_em).toLocaleDateString('pt-PT') : 'Data Indefinida'}
                               </div>
                             </div>
                           </div>
-                          <span style={{ fontWeight: '700', fontSize: '15px' }}>{hp.preco.toFixed(2)}€</span>
+                          <span style={{ fontWeight: '700', fontSize: '15px' }}>
+                            {h.preco ? `${h.preco.toFixed(2)} ${currency}` : ''}
+                          </span>
                         </div>
-                      );
-                    })}
-                </div>
-              </>
-            )}
+                      ))}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </BottomSheet>
       </>
@@ -923,7 +1012,7 @@ export function ListasView() {
           </div>
 
           <div className="ios-form-group">
-            <label className="ios-form-label">Orçamento Estimado (€, Opcional)</label>
+            <label className="ios-form-label">Orçamento Estimado ({currency}, Opcional)</label>
             <input
               type="number"
               step="1"

@@ -59,17 +59,25 @@ export interface ListaCompras {
   atualizado_em?: string;
 }
 
-// 6. Entidade: Item da Lista
+// 6. Entidade: Item da Lista (Refatorado para texto livre e autocompletar)
 export interface ItemLista {
   id: string;
   lista_id: string;
-  produto_id: string;
-  loja_preferencial_id?: string;
+  nome_produto: string;
+  categoria: string;
   quantidade: number;
   estado: EstadoItem;
-  preco_unitario_pago?: number;
-  notas?: string;
+  nota_adicional?: string;
+  loja?: string;
+  preco?: number;
   criado_em?: string;
+}
+
+// 7. Entidade: Histórico de Autocompletar / Sugestões
+export interface SugestaoHistorico {
+  id: string; // Ex: "produto:arroz" ou "loja:continente"
+  tipo: 'produto' | 'categoria' | 'quantidade' | 'loja';
+  valor: string;
 }
 
 // ====================================================================
@@ -98,8 +106,8 @@ export interface ComparativoPrecoProduto {
 
 export interface ItemListaDetalhado extends ItemLista {
   produto?: Produto;
-  categoria?: Categoria;
-  loja_preferencial?: Loja;
+  categoria_obj?: Categoria;
+  loja_obj?: Loja;
   preco_mais_baixo_atual?: number;
   loja_mais_barata_nome?: string;
 }

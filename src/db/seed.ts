@@ -1,4 +1,4 @@
-import { Loja, Categoria, Produto, HistoricoPreco, ListaCompras, ItemLista } from '../types/database';
+import { Loja, Categoria, Produto, HistoricoPreco, ListaCompras, ItemLista, SugestaoHistorico } from '../types/database';
 
 export const INITIAL_LOJAS: Loja[] = [
   { id: 'loj-1', nome: 'Continente', cor_identificadora: '#E30613', localizacao: 'Supermercado Central', criado_em: '2026-08-01T10:00:00Z' },
@@ -44,8 +44,8 @@ export const INITIAL_HISTORICO_PRECOS: HistoricoPreco[] = [
   { id: 'hist-2', produto_id: 'prod-1', loja_id: 'loj-2', preco: 0.95, data: '2026-08-02', em_promocao: true },
   { id: 'hist-3', produto_id: 'prod-1', loja_id: 'loj-3', preco: 0.98, data: '2026-08-03', em_promocao: false },
 
-  // Azeite (Grandes diferenças de preço)
-  { id: 'hist-4', produto_id: 'prod-9', loja_id: 'loj-1', preco: 7.99, data: '2026-08-01', em_promocao: true, observacao: 'Desconto 20% L20' },
+  // Azeite
+  { id: 'hist-4', produto_id: 'prod-9', loja_id: 'loj-1', preco: 7.99, data: '2026-08-01', em_promocao: true, observacao: 'Desconto 20%' },
   { id: 'hist-5', produto_id: 'prod-9', loja_id: 'loj-2', preco: 9.49, data: '2026-08-02', em_promocao: false },
   { id: 'hist-6', produto_id: 'prod-9', loja_id: 'loj-4', preco: 7.49, data: '2026-08-04', em_promocao: true },
 
@@ -81,22 +81,25 @@ export const INITIAL_LISTAS: ListaCompras[] = [
   },
 ];
 
+// Refatorado para o novo modelo de dados com propriedades separadas diretas
 export const INITIAL_ITENS_LISTA: ItemLista[] = [
   {
     id: 'itm-1',
     lista_id: 'lst-1',
-    produto_id: 'prod-3', // Queijo (Stock 0)
-    loja_preferencial_id: 'loj-2',
+    nome_produto: 'Queijo Fatiado Flamenco Terra de Nostra (200g)',
+    categoria: 'Lacticínios & Ovos',
+    loja: 'Pingo Doce',
     quantidade: 2,
     estado: 'pendente',
-    notas: 'Preferência por embalagem poupança',
+    nota_adicional: 'Preferência por embalagem poupança',
     criado_em: '2026-08-07T14:30:00Z',
   },
   {
     id: 'itm-2',
     lista_id: 'lst-1',
-    produto_id: 'prod-5', // Maçã Fuji
-    loja_preferencial_id: 'loj-1',
+    nome_produto: 'Maçã Fuji Nacional (kg)',
+    categoria: 'Frutas & Legumes',
+    loja: 'Continente',
     quantidade: 1.5,
     estado: 'pendente',
     criado_em: '2026-08-07T14:31:00Z',
@@ -104,21 +107,66 @@ export const INITIAL_ITENS_LISTA: ItemLista[] = [
   {
     id: 'itm-3',
     lista_id: 'lst-1',
-    produto_id: 'prod-12', // Detergente Skip
-    loja_preferencial_id: 'loj-1',
+    nome_produto: 'Detergente Máquina Roupa Skip (40 doses)',
+    categoria: 'Higiene & Limpeza',
+    loja: 'Continente',
     quantidade: 1,
     estado: 'comprado',
-    preco_unitario_pago: 14.99,
+    preco: 14.99,
     criado_em: '2026-08-07T14:32:00Z',
   },
   {
     id: 'itm-4',
     lista_id: 'lst-1',
-    produto_id: 'prod-1', // Leite
-    loja_preferencial_id: 'loj-2',
+    nome_produto: 'Leite Meio Gordo Mimosa (1L)',
+    categoria: 'Lacticínios & Ovos',
+    loja: 'Pingo Doce',
     quantidade: 6,
     estado: 'comprado',
-    preco_unitario_pago: 0.95,
+    preco: 0.95,
     criado_em: '2026-08-07T14:35:00Z',
   },
+];
+
+// Dados Iniciais para o Histórico de Autocompletar / Sugestões
+export const INITIAL_SUGESTOES: SugestaoHistorico[] = [
+  // Sugestões de Produtos
+  { id: 'produto:leite meio gordo mimosa (1l)', tipo: 'produto', valor: 'Leite Meio Gordo Mimosa (1L)' },
+  { id: 'produto:ovos m classe a (dúzia)', tipo: 'produto', valor: 'Ovos M Classe A (Dúzia)' },
+  { id: 'produto:queijo fatiado flamenco terra de nostra (200g)', tipo: 'produto', valor: 'Queijo Fatiado Flamenco Terra de Nostra (200g)' },
+  { id: 'produto:banana da madeira (kg)', tipo: 'produto', valor: 'Banana da Madeira (kg)' },
+  { id: 'produto:maçã fuji nacional (kg)', tipo: 'produto', valor: 'Maçã Fuji Nacional (kg)' },
+  { id: 'produto:peito de frango fresco (kg)', tipo: 'produto', valor: 'Peito de Frango Fresco (kg)' },
+  { id: 'produto:postas de bacalhau da noruega (kg)', tipo: 'produto', valor: 'Postas de Bacalhau da Noruega (kg)' },
+  { id: 'produto:pão de forma integral (500g)', tipo: 'produto', valor: 'Pão de Forma Integral (500g)' },
+  { id: 'produto:azeite virgem extra oliveira da serra (750ml)', tipo: 'produto', valor: 'Azeite Virgem Extra Oliveira da Serra (750ml)' },
+  { id: 'produto:arroz carolino cigala (1kg)', tipo: 'produto', valor: 'Arroz Carolino Cigala (1kg)' },
+  { id: 'produto:massa spaghetti milaneza (500g)', tipo: 'produto', valor: 'Massa Spaghetti Milaneza (500g)' },
+  { id: 'produto:detergente máquina roupa skip (40 doses)', tipo: 'produto', valor: 'Detergente Máquina Roupa Skip (40 doses)' },
+
+  // Sugestões de Categorias
+  { id: 'categoria:lacticínios & ovos', tipo: 'categoria', valor: 'Lacticínios & Ovos' },
+  { id: 'categoria:frutas & legumes', tipo: 'categoria', valor: 'Frutas & Legumes' },
+  { id: 'categoria:talho & peixaria', tipo: 'categoria', valor: 'Talho & Peixaria' },
+  { id: 'categoria:padaria & pastelaria', tipo: 'categoria', valor: 'Padaria & Pastelaria' },
+  { id: 'categoria:despensa & mercearia', tipo: 'categoria', valor: 'Despensa & Mercearia' },
+  { id: 'categoria:bebidas & sumos', tipo: 'categoria', valor: 'Bebidas & Sumos' },
+  { id: 'categoria:higiene & limpeza', tipo: 'categoria', valor: 'Higiene & Limpeza' },
+
+  // Sugestões de Lojas
+  { id: 'loja:continente', tipo: 'loja', valor: 'Continente' },
+  { id: 'loja:pingo doce', tipo: 'loja', valor: 'Pingo Doce' },
+  { id: 'loja:mercadona', tipo: 'loja', valor: 'Mercadona' },
+  { id: 'loja:lidl', tipo: 'loja', valor: 'Lidl' },
+  { id: 'loja:auchan', tipo: 'loja', valor: 'Auchan' },
+
+  // Sugestões de Quantidade comuns
+  { id: 'quantidade:1', tipo: 'quantidade', valor: '1' },
+  { id: 'quantidade:2', tipo: 'quantidade', valor: '2' },
+  { id: 'quantidade:3', tipo: 'quantidade', valor: '3' },
+  { id: 'quantidade:4', tipo: 'quantidade', valor: '4' },
+  { id: 'quantidade:5', tipo: 'quantidade', valor: '5' },
+  { id: 'quantidade:6', tipo: 'quantidade', valor: '6' },
+  { id: 'quantidade:1.5', tipo: 'quantidade', valor: '1.5' },
+  { id: 'quantidade:0.5', tipo: 'quantidade', valor: '0.5' },
 ];
