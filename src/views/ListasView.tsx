@@ -29,6 +29,7 @@ interface ListasViewProps {
 
 export function ListasView({ currency }: ListasViewProps) {
   const [activeListId, setActiveListId] = useState<string | null>(null);
+  const [hasAutoNavigated, setHasAutoNavigated] = useState(false);
   
   // Modais e Menus
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
@@ -59,8 +60,18 @@ export function ListasView({ currency }: ListasViewProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Consultas reativas Dexie
-  const listas = useLiveQuery(() => db.listas_compras.toArray(), []) || [];
+  const listas = useLiveQuery(() => db.listas_compras.orderBy('atualizado_em').reverse().toArray(), []) || [];
   const itens = useLiveQuery(() => db.itens_lista.toArray(), []) || [];
+
+  // Auto-navegação: abre diretamente a lista ativa mais recente ao entrar na app
+  useEffect(() => {
+    if (hasAutoNavigated || listas.length === 0) return;
+    const listaAtiva = listas.find((l) => l.estado === 'aberta');
+    if (listaAtiva) {
+      setActiveListId(listaAtiva.id);
+    }
+    setHasAutoNavigated(true);
+  }, [listas, hasAutoNavigated]);
   const produtos = useLiveQuery(() => db.produtos.toArray(), []) || [];
   const lojas = useLiveQuery(() => db.lojas.toArray(), []) || [];
   const historicoPrecos = useLiveQuery(() => db.historico_precos.toArray(), []) || [];
