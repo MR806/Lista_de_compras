@@ -73,6 +73,7 @@ export function ListasView({ currency }: ListasViewProps) {
     setHasAutoNavigated(true);
   }, [listas, hasAutoNavigated]);
   const produtos = useLiveQuery(() => db.produtos.toArray(), []) || [];
+  const categorias = useLiveQuery(() => db.categorias.orderBy('nome').toArray(), []) || [];
   const lojas = useLiveQuery(() => db.lojas.toArray(), []) || [];
   const historicoPrecos = useLiveQuery(() => db.historico_precos.toArray(), []) || [];
   
@@ -597,20 +598,27 @@ export function ListasView({ currency }: ListasViewProps) {
           {quantidadesSugestao.map((q) => <option key={q} value={q} />)}
         </datalist>
 
-        {/* Bottom Sheet: Adicionar Item Livre à Lista */}
+        {/* Bottom Sheet: Adicionar Item à Lista */}
         <BottomSheet
           isOpen={isAddItemSheetOpen}
-          onClose={() => setIsAddItemSheetOpen(false)}
+          onClose={() => {
+            setIsAddItemSheetOpen(false);
+            setAddItemNome('');
+            setAddItemCategoria('');
+            setAddItemQuantidade(1);
+            setAddItemNotas('');
+          }}
           title="Adicionar Item"
         >
           <form onSubmit={handleAddItemToList} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Nome do produto com autocompletar */}
             <div className="ios-form-group">
               <label className="ios-form-label">Nome do Produto *</label>
               <input
                 type="text"
                 list="produtos-datalist"
                 className="ios-input"
-                placeholder="Ex: Arroz, Leite, etc..."
+                placeholder="Ex: Arroz, Leite, Detergente..."
                 value={addItemNome}
                 onChange={(e) => setAddItemNome(e.target.value)}
                 required
@@ -618,67 +626,47 @@ export function ListasView({ currency }: ListasViewProps) {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div className="ios-form-group">
-                <label className="ios-form-label">Categoria</label>
-                <input
-                  type="text"
-                  list="categorias-datalist"
-                  className="ios-input"
-                  placeholder="Ex: Mercearia, Frutas..."
-                  value={addItemCategoria}
-                  onChange={(e) => setAddItemCategoria(e.target.value)}
-                />
-              </div>
-
-              <div className="ios-form-group">
-                <label className="ios-form-label">Quantidade</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0.1"
-                  list="quantidades-datalist"
-                  className="ios-input"
-                  value={addItemQuantidade}
-                  onChange={(e) => setAddItemQuantidade(Number(e.target.value))}
-                  required
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div className="ios-form-group">
-                <label className="ios-form-label">Supermercado/Loja</label>
-                <input
-                  type="text"
-                  list="lojas-datalist"
-                  className="ios-input"
-                  placeholder="Ex: Pingo Doce, Continente..."
-                  value={addItemLoja}
-                  onChange={(e) => setAddItemLoja(e.target.value)}
-                />
-              </div>
-
-              <div className="ios-form-group">
-                <label className="ios-form-label">Preço Unitário (Estimado)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  className="ios-input"
-                  placeholder="Opcional..."
-                  value={addItemPreco}
-                  onChange={(e) => setAddItemPreco(e.target.value)}
-                />
-              </div>
-            </div>
-
+            {/* Categoria via dropdown */}
             <div className="ios-form-group">
-              <label className="ios-form-label">Nota Adicional</label>
+              <label className="ios-form-label">Categoria</label>
+              <select
+                className="ios-select"
+                value={addItemCategoria}
+                onChange={(e) => setAddItemCategoria(e.target.value)}
+              >
+                <option value="">Selecionar categoria...</option>
+                {categorias.map((cat) => (
+                  <option key={cat.id} value={cat.nome}>
+                    {cat.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Quantidade */}
+            <div className="ios-form-group">
+              <label className="ios-form-label">Quantidade *</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0.1"
+                className="ios-input"
+                value={addItemQuantidade}
+                onChange={(e) => setAddItemQuantidade(Number(e.target.value))}
+                required
+              />
+            </div>
+
+            {/* Nota adicional opcional */}
+            <div className="ios-form-group">
+              <label className="ios-form-label">
+                Nota Adicional{' '}
+                <span style={{ color: 'var(--ios-label-tertiary)', fontWeight: '400' }}>(opcional)</span>
+              </label>
               <input
                 type="text"
                 className="ios-input"
-                placeholder="Ex: Marca própria, saco grande..."
+                placeholder="Ex: Marca própria, saco grande, sem lactose..."
                 value={addItemNotas}
                 onChange={(e) => setAddItemNotas(e.target.value)}
               />
