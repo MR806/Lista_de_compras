@@ -154,10 +154,10 @@ export function ListasView({ currency }: ListasViewProps) {
         lista_id: novaListaId,
         nome_produto: item.nome_produto,
         categoria: item.categoria,
-        loja: item.loja,
+        loja: undefined,          // limpo — utilizador preenche na nova ida às compras
         quantidade: item.quantidade,
         estado: 'pendente',
-        preco: undefined,
+        preco: undefined,          // limpo
         nota_adicional: item.nota_adicional,
         criado_em: new Date().toISOString(),
       }));
